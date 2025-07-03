@@ -152,5 +152,10 @@ def fetch_url(url: str, method: str = "GET", headers: Optional[Dict[str, str]] =
         }
 
 if __name__ == "__main__":
-    mcp.run()
+    # Get configuration from environment variables
+    host = os.environ.get("MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("MCP_PORT", "8000"))
+    
+    # Run with HTTP transport
+    mcp.run(transport="http", host=host, port=port)
 
