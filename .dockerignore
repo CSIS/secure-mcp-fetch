@@ -1,6 +1,7 @@
 # Git files
 .git
 .gitignore
+.github/
 
 # Python cache
 __pycache__/
@@ -59,3 +60,21 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# CI/CD files
+.github/
+*.yml
+*.yaml
+
+# Logs
+*.log
