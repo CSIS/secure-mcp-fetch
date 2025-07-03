@@ -156,7 +156,6 @@ if __name__ == "__main__":
     
     # Create HTTP app with JSON responses and stateless operation
     app = mcp.http_app(
-        path="/mcp",
         json_response=True,
         stateless_http=True,
         transport="streamable-http"
