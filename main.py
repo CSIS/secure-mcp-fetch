@@ -6,6 +6,9 @@ import os
 from typing import Optional, Dict, Any, Tuple, List
 from urllib.parse import urlparse
 from requests.exceptions import RequestException
+from bs4 import BeautifulSoup
+import re
+import html2text
 
 mcp = FastMCP("Secure Fetch")
 
@@ -49,8 +52,78 @@ def resolve_domain(url: str) -> Tuple[str, str, str]:
     except socket.gaierror:
         raise ValueError(f"Could not resolve hostname: {hostname}")
 
+def convert_html_to_markdown(html_content: str, content_type: str = "") -> str:
+    """
+    Convert HTML content to clean markdown format, removing scripts, styles, and unwanted elements
+    
+    Args:
+        html_content: Raw HTML content
+        content_type: Content-Type header to determine if it's HTML
+    
+    Returns:
+        Clean markdown content
+    """
+    # Only process if it's HTML content
+    if not content_type or "text/html" not in content_type.lower():
+        return html_content
+    
+    try:
+        # First, clean the HTML with BeautifulSoup to remove unwanted elements
+        soup = BeautifulSoup(html_content, 'lxml')
+        
+        # Remove script, style, and other unwanted elements
+        for element in soup(["script", "style", "meta", "link", "noscript", "head"]):
+            element.decompose()
+        
+        # Remove comments
+        for comment in soup.find_all(string=lambda text: isinstance(text, soup.__class__.__bases__[0])):
+            if hasattr(comment, 'extract'):
+                comment.extract()
+        
+        # Get the cleaned HTML
+        cleaned_html = str(soup)
+        
+        # Configure html2text converter
+        h = html2text.HTML2Text()
+        h.ignore_links = False  # Keep links as markdown links
+        h.ignore_images = False  # Keep images as markdown images
+        h.body_width = 0  # Don't wrap lines
+        h.ignore_emphasis = False  # Keep bold/italic formatting
+        h.ignore_tables = False  # Convert tables to markdown
+        h.single_line_break = False  # Use proper line breaks
+        h.mark_code = True  # Mark code blocks
+        h.wrap_links = False  # Don't wrap link URLs
+        h.unicode_snob = True  # Use unicode characters when possible
+        h.escape_snob = True  # Escape special markdown characters when needed
+        
+        # Convert HTML to markdown
+        markdown_content = h.handle(cleaned_html)
+        
+        # Clean up the markdown output
+        # Remove excessive blank lines (more than 2 consecutive)
+        markdown_content = re.sub(r'\n{3,}', '\n\n', markdown_content)
+        
+        # Clean up leading/trailing whitespace
+        markdown_content = markdown_content.strip()
+        
+        return markdown_content
+        
+    except Exception as e:
+        # If conversion fails, fall back to basic text extraction
+        try:
+            soup = BeautifulSoup(html_content, 'lxml')
+            for script in soup(["script", "style", "meta", "link", "noscript"]):
+                script.decompose()
+            text = soup.get_text()
+            text = re.sub(r'\s+', ' ', text)
+            lines = [line.strip() for line in text.splitlines()]
+            clean_lines = [line for line in lines if line]
+            return '\n'.join(clean_lines)
+        except:
+            return html_content
+
 @mcp.tool()
-def fetch_url(url: str, method: str = "GET", headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def fetch_url(url: str, method: str = "GET", headers: Optional[Dict[str, str]] = None, output_format: str = "markdown") -> Dict[str, Any]:
     """
     Fetch a URL and return response details
     
@@ -58,13 +131,22 @@ def fetch_url(url: str, method: str = "GET", headers: Optional[Dict[str, str]] =
         url: The URL to fetch
         method: HTTP method to use (default: GET)
         headers: Optional HTTP headers
+        output_format: Output format - "markdown" to convert HTML to markdown, "html" to keep original HTML (default: "markdown")
     
     Returns:
-        Dictionary containing status_code, body, and length
+        Dictionary containing status_code, content (markdown or HTML), and metadata
     """
     # Initialize headers if None
     if headers is None:
         headers = {}
+    
+    # Validate output_format parameter
+    if output_format not in ["markdown", "html"]:
+        return {
+            "status_code": 400,
+            "content": f"Invalid output_format '{output_format}'. Must be 'markdown' or 'html'.",
+            "output_type": "error"
+        }
     
     try:
         # Track redirects
@@ -130,25 +212,42 @@ def fetch_url(url: str, method: str = "GET", headers: Optional[Dict[str, str]] =
                 # No redirect, return the response
                 break
         
+        # Get response content
         response_body = response.text
+        original_content_type = response.headers.get('content-type', '')
+        
+        # Determine output type and process content accordingly
+        if output_format == "markdown" and "text/html" in original_content_type.lower():
+            # Convert HTML to markdown
+            processed_content = convert_html_to_markdown(response_body, original_content_type)
+            output_type = "markdown"
+        else:
+            # Keep original content (HTML or other formats)
+            processed_content = response_body
+            if "text/html" in original_content_type.lower():
+                output_type = "html"
+            else:
+                output_type = original_content_type.split(';')[0] if original_content_type else "text/plain"
+        
         return {
             "status_code": response.status_code,
-            "body": response_body,
-            "length": len(response_body),
+            "content": processed_content,
             "redirect_count": redirect_count,
-            "final_url": current_url
+            "final_url": current_url,
+            "original_content_type": original_content_type,
+            "output_type": output_type
         }
     except ValueError as e:
         return {
             "status_code": 403,
-            "body": str(e),
-            "length": 0
+            "content": str(e),
+            "output_type": "error"
         }
     except RequestException as e:
         return {
             "status_code": 0,
-            "body": str(e),
-            "length": 0
+            "content": str(e),
+            "output_type": "error"
         }
 
 if __name__ == "__main__":
