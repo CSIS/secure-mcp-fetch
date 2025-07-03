@@ -152,5 +152,16 @@ def fetch_url(url: str, method: str = "GET", headers: Optional[Dict[str, str]] =
         }
 
 if __name__ == "__main__":
-    mcp.run()
+    import uvicorn
+    
+    # Create HTTP app with JSON responses and stateless operation
+    app = mcp.http_app(
+        path="/mcp",
+        json_response=True,
+        stateless_http=True,
+        transport="streamable-http"
+    )
+    
+    # Run with uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
